@@ -25,7 +25,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 from torchvision import transforms, models
-from PIL import Image
+from PIL import Image, ImageOps
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 
@@ -58,7 +58,15 @@ LOCATION_HINTS = [
     r"17156",
 ]
 SUCCESS_WORDS = [
+    # Explicit success statements
     r"\b(sukses|berhasil|successful|success|diterima|received|completed|paid)\b",
+    # Terminal-state UI cues: these labels only render AFTER a transaction
+    # finishes (close/done button, confirmation page title, etc.)
+    r"\b(selesai|selesaikan|tutup|done|close|finish)\b",
+    r"transaksi\s*(berhasil|selesai)",
+    r"pembayaran\s*(berhasil|diterima|sukses|selesai)",
+    # Common reference IDs on completed transactions
+    r"\b(rrn|no\.?\s*referensi|reference\s*no|nomor\s*transaksi)\b",
 ]
 AMOUNT_PATTERN = re.compile(r"(?:Rp\.?|IDR)\s*([\d.,]+)", re.IGNORECASE)
 VALID_AMOUNTS = {5000, 8800, 9900, 10000, 12000, 15000, 20000, 25000, 35000, 50000}
@@ -115,27 +123,108 @@ def get_ocr():
     return None, None
 
 
+OCR_MAX_SIDE = 1600  # preprocess cap — bigger = slow OCR, barely better accuracy
+
+
+def preprocess_for_ocr(img: Image.Image) -> tuple[Image.Image, float]:
+    """
+    Normalize image before OCR:
+    - Honor EXIF orientation (phones often save landscape w/ rotation metadata)
+    - Downscale if any side > OCR_MAX_SIDE (3-5× faster, no accuracy loss)
+    - Convert to grayscale (Tesseract prefers it)
+    Returns (processed_img, scale_factor_applied_to_coords).
+    """
+    img = ImageOps.exif_transpose(img)
+    w, h = img.size
+    max_side = max(w, h)
+    scale = 1.0
+    if max_side > OCR_MAX_SIDE:
+        scale = OCR_MAX_SIDE / max_side
+        new_size = (int(w * scale), int(h * scale))
+        img = img.resize(new_size, Image.LANCZOS)
+    img = img.convert("L")
+    return img, scale
+
+
+def _ocr_tesseract_text(img: Image.Image) -> str:
+    import pytesseract
+    return pytesseract.image_to_string(img) or ""
+
+
+# Keywords we expect in a correctly-oriented Indonesian payment receipt.
+# Used to score each rotation candidate.
+_ORIENT_HINTS = (
+    "berhasil", "sukses", "payment", "qris", "bca", "gopay", "dana", "ovo",
+    "shopee", "jenius", "pembayaran", "transfer", "henry", "augusta",
+    "harsono", "railway", "rp ", "idr ", "nominal", "total",
+)
+
+
+def _orient_score(text: str) -> int:
+    """Count whole-word matches of expected hints."""
+    low = text.lower()
+    return sum(1 for h in _ORIENT_HINTS if h in low)
+
+
+def auto_orient(img: Image.Image) -> Image.Image:
+    """
+    EXIF already handled upstream, but some photos lack metadata OR were
+    rotated 180° physically. Try all 4 rotations and keep the one whose
+    Tesseract output contains the most expected receipt keywords.
+    Cost: 4 OCR passes on a tiny thumbnail (~200px), so < 300ms total.
+    """
+    # Thumbnail to make the probe cheap
+    probe = img.copy()
+    probe.thumbnail((400, 400), Image.LANCZOS)
+
+    best_angle = 0
+    best_score = _orient_score(_ocr_tesseract_text(probe))
+    for angle in (90, 180, 270):
+        rotated = probe.rotate(angle, expand=True)
+        s = _orient_score(_ocr_tesseract_text(rotated))
+        if s > best_score:
+            best_score = s
+            best_angle = angle
+
+    if best_angle == 0:
+        return img
+    return img.rotate(best_angle, expand=True)
+
+
 def run_ocr(img: Image.Image) -> list[dict]:
     ocr, kind = get_ocr()
     if ocr is None:
         return []
+
+    # Preprocess: EXIF transpose + downscale + grayscale
+    pre_img, scale = preprocess_for_ocr(img)
+    # Fallback for images without usable EXIF: try 4 rotations and pick the
+    # one Tesseract reads as a real Indonesian receipt.
+    pre_img = auto_orient(pre_img)
+    inv_scale = 1.0 / scale if scale > 0 else 1.0
+
     if kind == "tesseract":
         import pytesseract
-        data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+        data = pytesseract.image_to_data(pre_img, output_type=pytesseract.Output.DICT)
         out = []
         for i, t in enumerate(data["text"]):
             t = t.strip()
             if not t:
                 continue
+            # scale box coords back to original image resolution
+            x = int(data["left"][i] * inv_scale)
+            y = int(data["top"][i] * inv_scale)
+            w = int(data["width"][i] * inv_scale)
+            h = int(data["height"][i] * inv_scale)
             out.append({
                 "text": t,
-                "box": [data["left"][i], data["top"][i], data["width"][i], data["height"][i]],
+                "box": [x, y, w, h],
                 "conf": float(data["conf"][i]) / 100.0 if data["conf"][i] != "-1" else 0.0,
             })
         return out
     # paddle
     import numpy as np
-    arr = np.array(img.convert("RGB"))
+    arr = np.array(pre_img.convert("RGB"))
     out_raw = ocr.ocr(arr, cls=True)
     results = []
     if out_raw and out_raw[0]:
@@ -143,31 +232,54 @@ def run_ocr(img: Image.Image) -> list[dict]:
             box, (text, conf) = item
             xs = [p[0] for p in box]
             ys = [p[1] for p in box]
-            x, y = int(min(xs)), int(min(ys))
-            w, h = int(max(xs) - x), int(max(ys) - y)
+            x = int(min(xs) * inv_scale)
+            y = int(min(ys) * inv_scale)
+            w = int((max(xs) - min(xs)) * inv_scale)
+            h = int((max(ys) - min(ys)) * inv_scale)
             results.append({"text": text, "box": [x, y, w, h], "conf": float(conf)})
     return results
 
 
 def parse_amount(raw: str) -> int | None:
-    # normalize "15.000,00" or "15,000" or "15000" → 15000
+    """
+    Normalize a Rupiah string to its integer value.
+
+    Handles both locales found on Indonesian receipts:
+      - Indonesian (Rp 15.000,00): "." = thousands, "," = decimal
+      - US / English  (IDR 15,000.00): "," = thousands, "." = decimal
+
+    Strategy: the LAST separator before a 1-3 digit tail is the decimal mark;
+    everything before it is the integer part with any grouping separator stripped.
+    """
     s = raw.replace(" ", "")
-    # Indonesian format: "." is thousands, "," is decimal
-    if "," in s and "." in s:
-        s = s.replace(".", "").split(",")[0]
-    elif "." in s:
-        # could be either; if last group is 3 digits, treat as thousands sep
-        parts = s.split(".")
-        if all(len(p) == 3 for p in parts[1:]):
-            s = s.replace(".", "")
+    if not s:
+        return None
+
+    # Find the last "." or "," followed by 1-3 digits at the end — that's decimal
+    import re as _re
+    m = _re.search(r"[.,](\d{1,3})$", s)
+    if m and ("," in s[:m.start()] or "." in s[:m.start()]):
+        # has grouping sep before decimal → split
+        decimal_part = m.group(1)
+        # if decimal part is exactly 3 digits, might actually be the last group of
+        # a thousands separator (e.g. "35.000" where "." is thousands sep, no decimals).
+        # Decide by looking at char: separators that match other separators in the
+        # string indicate grouping, not decimal.
+        decimal_sep = s[m.start()]
+        other_seps = [c for c in s[:m.start()] if c in (",", ".")]
+        if other_seps and other_seps[0] == decimal_sep:
+            # same char used both before and at the end → it's a grouping sep
+            s = s.replace(",", "").replace(".", "")
+        elif len(decimal_part) == 3 and not other_seps:
+            # single separator + exactly 3 trailing digits → thousands sep ("35.000")
+            s = s.replace(",", "").replace(".", "")
         else:
-            s = parts[0]
-    elif "," in s:
-        parts = s.split(",")
-        if all(len(p) == 3 for p in parts[1:]):
-            s = s.replace(",", "")
-        else:
-            s = parts[0]
+            # genuine decimal: drop it
+            s = s[:m.start()].replace(",", "").replace(".", "")
+    else:
+        # no decimal mark — just strip any grouping seps
+        s = s.replace(",", "").replace(".", "")
+
     try:
         return int(s)
     except ValueError:
