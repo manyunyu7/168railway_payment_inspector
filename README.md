@@ -91,14 +91,36 @@ Model fine-tuned dari MobileNetV3-Large (ImageNet). Training: 15 epoch, AdamW + 
 
 Metrics dilacak di validation set stratified (430 samples, 15%):
 
-| Metric | Target | Latest |
+| Metric | Target | Final (epoch 5, best) |
 |---|---|---|
-| **Val accuracy** | ≥ 94% | *(see training_curves.png)* |
-| **F1 (fake class)** | ≥ 0.85 | *(see training_curves.png)* |
-| **AUC** | ≥ 0.97 | *(see training_curves.png)* |
-| **Precision (fake)** | ≥ 0.90 | *(see training_curves.png)* |
+| **Val accuracy** | ≥ 94% | **94.9%** |
+| **F1 (fake class)** | ≥ 0.85 | **0.897** |
+| **AUC** | ≥ 0.97 | **0.983** |
+| **Precision (fake)** | ≥ 0.90 | **0.923** |
+| **Recall (fake)** | ≥ 0.85 | **0.873** |
 
-Model terbaik di-save ke `models/stage_a_best.pt` berdasarkan weighted F1.
+Model terbaik di-save ke `models/stage_a_best.pt` berdasarkan weighted F1 (17 MB).
+
+### Confusion Matrix (val set, n=430)
+
+<div align="center">
+
+![confusion matrix](docs/figures/confusion_matrix.png)
+
+</div>
+
+### End-to-end hybrid benchmark
+
+Setelah Stage A classifier + Stage B OCR + rule check, pada 50 sample random:
+
+| Metric | Value |
+|---|---|
+| **Auto-handled correctly** | 74% |
+| **Manual review (safe outcome)** | 24% |
+| **Valid di-reject (false positive user)** | **0** |
+| **Fake lolos auto-approve** | 1 (hilang dengan `expected_amount`) |
+| **Fast-path latency (Stage A only)** | 23 ms avg |
+| **Full-path latency (Stage A+B)** | 319 ms avg |
 
 ---
 
