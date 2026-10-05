@@ -1,0 +1,24 @@
+services:
+  inspector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: payment-inspector:latest
+    container_name: payment-inspector
+    restart: unless-stopped
+    # Bind to localhost only — Laravel reaches it via http://127.0.0.1:8000.
+    # NOT exposed to public internet; use nginx if you want public access.
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - OMP_NUM_THREADS=2
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1500M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

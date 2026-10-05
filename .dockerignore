@@ -1,0 +1,17 @@
+.git/
+.venv/
+__pycache__/
+*.pyc
+data/
+docs/
+notebooks/
+scripts/
+.env
+.env.example
+.gitignore
+README.md
+Dockerfile
+docker-compose.yml
+deploy.sh
+*.log
+models/training_history.json
