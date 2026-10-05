@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 420" font-family="ui-sans-serif,system-ui,sans-serif">
+  <text x="440" y="30" text-anchor="middle" font-size="18" font-weight="700" fill="#111827">Dataset Distribution</text>
+  <text x="440" y="50" text-anchor="middle" font-size="12" fill="#6b7280">36,936 total submissions from DB · 2,862 used for training after sampling &amp; cleaning</text>
+
+  <!-- Top: pie-like horizontal breakdown of full DB -->
+  <text x="60" y="90" font-size="13" font-weight="600" fill="#111827">Full DB (all with payment_proof)</text>
+
+  <!-- Stacked bar: 36936 wide -->
+  <!-- valid 36083 (97.7%), rejected variants: 823 (2.2%), bonus 30 (0.1%) -->
+  <!-- scale: 760 width total -->
+  <rect x="60" y="100" width="742" height="36" rx="4" fill="#22c55e"/>
+  <rect x="802" y="100" width="17" height="36" rx="0" fill="#ef4444"/>
+  <rect x="819" y="100" width="1" height="36" rx="0" fill="#f59e0b"/>
+
+  <text x="430" y="124" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">valid · 36,083 (97.7%)</text>
+  <text x="810" y="155" text-anchor="middle" fill="#ef4444" font-size="11" font-weight="600">rejects 823</text>
+  <text x="820" y="170" text-anchor="end" fill="#f59e0b" font-size="10">bonus 30</text>
+
+  <!-- Legend -->
+  <g transform="translate(60,195)">
+    <rect width="14" height="14" fill="#22c55e" rx="2"/>
+    <text x="22" y="12" font-size="12" fill="#111827">valid (completed)</text>
+    <rect x="170" width="14" height="14" fill="#ef4444" rx="2"/>
+    <text x="192" y="12" font-size="12" fill="#111827">rejected</text>
+    <rect x="280" width="14" height="14" fill="#f59e0b" rx="2"/>
+    <text x="302" y="12" font-size="12" fill="#111827">bonus / admin manual (excluded)</text>
+  </g>
+
+  <!-- Reject breakdown -->
+  <text x="60" y="245" font-size="13" font-weight="600" fill="#111827">Rejection reason breakdown</text>
+
+  <!-- bars for 823 rejects -->
+  <!-- fake_telegram 272, fake_other 229, fake_invalid 206, fake_fake 116 -->
+  <g transform="translate(60, 260)">
+    <text x="0" y="12" font-size="11" fill="#374151">fake_telegram  (bot reject)</text>
+    <rect x="180" y="0" width="272" height="16" fill="#7c3aed" rx="3"/>
+    <text x="462" y="12" font-size="11" fill="#374151" font-weight="600">272</text>
+
+    <text x="0" y="34" font-size="11" fill="#374151">fake_other  (no reason)</text>
+    <rect x="180" y="22" width="229" height="16" fill="#8b5cf6" rx="3"/>
+    <text x="419" y="34" font-size="11" fill="#374151" font-weight="600">229</text>
+
+    <text x="0" y="56" font-size="11" fill="#374151">fake_invalid  ("upload yg valid")</text>
+    <rect x="180" y="44" width="206" height="16" fill="#a78bfa" rx="3"/>
+    <text x="396" y="56" font-size="11" fill="#374151" font-weight="600">206</text>
+
+    <text x="0" y="78" font-size="11" fill="#374151">fake_fake  ("palsu / fraud")</text>
+    <rect x="180" y="66" width="116" height="16" fill="#c4b5fd" rx="3"/>
+    <text x="306" y="78" font-size="11" fill="#374151" font-weight="600">116</text>
+  </g>
+
+  <!-- Right side: human review results -->
+  <g transform="translate(540, 220)">
+    <text x="0" y="0" font-size="13" font-weight="600" fill="#111827">Human review (quality check)</text>
+    <text x="0" y="18" font-size="11" fill="#6b7280">330 images reviewed in labeling UI</text>
+
+    <rect x="0" y="35" width="300" height="36" rx="4" fill="#f3f4f6" stroke="#d1d5db"/>
+    <rect x="0" y="35" width="294" height="36" rx="4" fill="#22c55e"/>
+    <text x="150" y="58" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">Positive clean: 97.2%</text>
+
+    <rect x="0" y="80" width="300" height="36" rx="4" fill="#f3f4f6" stroke="#d1d5db"/>
+    <rect x="0" y="80" width="300" height="36" rx="4" fill="#22c55e"/>
+    <text x="150" y="103" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">Negative clean: 100.0%</text>
+
+    <text x="0" y="140" font-size="11" fill="#6b7280" font-style="italic">DB labels highly reliable — safe to use</text>
+    <text x="0" y="155" font-size="11" fill="#6b7280" font-style="italic">as training signal without additional filtering.</text>
+  </g>
+
+  <!-- Final training split -->
+  <g transform="translate(60, 370)">
+    <text x="0" y="0" font-size="12" font-weight="600" fill="#111827">Final training set — 2,862 samples (stratified 85/15 train/val)</text>
+    <text x="0" y="18" font-size="11" fill="#374151">2,130 valid  ·  732 fake  ·  ratio 2.9:1 (handled via WeightedRandomSampler)</text>
+  </g>
+</svg>

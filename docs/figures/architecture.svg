@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 520" font-family="ui-sans-serif,system-ui,sans-serif">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#1e40af"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#059669"/><stop offset="1" stop-color="#047857"/>
+    </linearGradient>
+    <linearGradient id="g3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d97706"/><stop offset="1" stop-color="#b45309"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7280"/>
+    </marker>
+    <style>
+      .box { stroke: #374151; stroke-width: 1.5; rx: 10; }
+      .label { font-size: 15px; font-weight: 600; fill: #fff; }
+      .sub { font-size: 11px; fill: #e5e7eb; font-weight: 400; }
+      .arrow { stroke: #6b7280; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .ghost { fill: #f3f4f6; stroke: #d1d5db; }
+      .ghost-t { fill: #374151; font-size: 13px; font-weight: 600; }
+      .ghost-s { fill: #6b7280; font-size: 11px; }
+      .caption { font-size: 10px; fill: #9ca3af; font-style: italic; }
+    </style>
+  </defs>
+
+  <!-- Title -->
+  <text x="490" y="30" text-anchor="middle" font-size="18" font-weight="700" fill="#111827">Payment Inspector — 2-Stage Pipeline</text>
+
+  <!-- 1. Flutter upload -->
+  <rect x="40" y="70" width="180" height="90" class="box ghost"/>
+  <text x="130" y="100" text-anchor="middle" class="ghost-t">Flutter App</text>
+  <text x="130" y="120" text-anchor="middle" class="ghost-s">User upload foto bukti</text>
+  <text x="130" y="138" text-anchor="middle" class="ghost-s">multipart/form-data</text>
+
+  <!-- Arrow 1 -->
+  <path d="M 220 115 L 280 115" class="arrow"/>
+
+  <!-- Stage A -->
+  <rect x="280" y="70" width="220" height="90" class="box" fill="url(#g1)"/>
+  <text x="390" y="100" text-anchor="middle" class="label">Stage A — Classifier</text>
+  <text x="390" y="120" text-anchor="middle" class="sub">MobileNetV3-Large (fine-tuned)</text>
+  <text x="390" y="138" text-anchor="middle" class="sub">p(valid) vs p(fake)</text>
+
+  <!-- Arrow 2 -->
+  <path d="M 500 115 L 560 115" class="arrow"/>
+
+  <!-- Stage B -->
+  <rect x="560" y="70" width="220" height="90" class="box" fill="url(#g2)"/>
+  <text x="670" y="100" text-anchor="middle" class="label">Stage B — Rule Check</text>
+  <text x="670" y="120" text-anchor="middle" class="sub">PaddleOCR + whitelist</text>
+  <text x="670" y="138" text-anchor="middle" class="sub">recipient • amount • status</text>
+
+  <!-- Arrow 3 -->
+  <path d="M 780 115 L 840 115" class="arrow"/>
+
+  <!-- Verdict -->
+  <rect x="840" y="70" width="120" height="90" class="box" fill="url(#g3)"/>
+  <text x="900" y="105" text-anchor="middle" class="label">Verdict</text>
+  <text x="900" y="125" text-anchor="middle" class="sub">+ bbox</text>
+  <text x="900" y="143" text-anchor="middle" class="sub">+ reasons</text>
+
+  <!-- Policy section -->
+  <text x="490" y="210" text-anchor="middle" font-size="14" font-weight="700" fill="#111827">Decision Policy</text>
+
+  <rect x="60" y="230" width="280" height="100" class="box" fill="#fee2e2" stroke="#dc2626"/>
+  <text x="200" y="258" text-anchor="middle" font-size="14" font-weight="700" fill="#991b1b">auto_reject</text>
+  <text x="200" y="282" text-anchor="middle" font-size="12" fill="#991b1b">p(fake) ≥ 0.95</text>
+  <text x="200" y="302" text-anchor="middle" font-size="11" fill="#7f1d1d">Foto random / selfie / game / WA chat</text>
+  <text x="200" y="318" text-anchor="middle" font-size="11" fill="#7f1d1d">→ user langsung dapat feedback</text>
+
+  <rect x="350" y="230" width="280" height="100" class="box" fill="#dcfce7" stroke="#16a34a"/>
+  <text x="490" y="258" text-anchor="middle" font-size="14" font-weight="700" fill="#166534">auto_approve</text>
+  <text x="490" y="282" text-anchor="middle" font-size="12" fill="#166534">p(valid) ≥ 0.85 AND rules hit</text>
+  <text x="490" y="302" text-anchor="middle" font-size="11" fill="#14532d">Receipt + nominal match + penerima benar</text>
+  <text x="490" y="318" text-anchor="middle" font-size="11" fill="#14532d">→ langsung aktivasi akun</text>
+
+  <rect x="640" y="230" width="280" height="100" class="box" fill="#fef3c7" stroke="#d97706"/>
+  <text x="780" y="258" text-anchor="middle" font-size="14" font-weight="700" fill="#92400e">manual_review</text>
+  <text x="780" y="282" text-anchor="middle" font-size="12" fill="#92400e">Semua kasus lain</text>
+  <text x="780" y="302" text-anchor="middle" font-size="11" fill="#78350f">Edge case: nominal kurang, penerima lain</text>
+  <text x="780" y="318" text-anchor="middle" font-size="11" fill="#78350f">→ admin tetap verifikasi</text>
+
+  <!-- Response schema -->
+  <text x="490" y="370" text-anchor="middle" font-size="14" font-weight="700" fill="#111827">Response Schema</text>
+  <rect x="140" y="385" width="700" height="115" rx="8" fill="#111827"/>
+  <text x="160" y="408" font-family="ui-monospace,monospace" font-size="12" fill="#86efac">{</text>
+  <text x="180" y="425" font-family="ui-monospace,monospace" font-size="12" fill="#e5e7eb">"verdict": "auto_approve",   "confidence": 0.97,</text>
+  <text x="180" y="442" font-family="ui-monospace,monospace" font-size="12" fill="#e5e7eb">"stage_a": { "p_valid": 0.97, "p_fake": 0.03 },</text>
+  <text x="180" y="459" font-family="ui-monospace,monospace" font-size="12" fill="#e5e7eb">"stage_b": { "recipient_hit": true, "amounts": [15000], "issues": [] },</text>
+  <text x="180" y="476" font-family="ui-monospace,monospace" font-size="12" fill="#e5e7eb">"ocr_boxes": [ { "text": "Rp 15.000", "box": [x,y,w,h] }, ... ]</text>
+  <text x="160" y="493" font-family="ui-monospace,monospace" font-size="12" fill="#86efac">}</text>
+</svg>
