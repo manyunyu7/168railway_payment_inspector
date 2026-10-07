@@ -206,11 +206,8 @@ def run_ocr(img: Image.Image) -> list[dict]:
     if ocr is None:
         return []
 
-    # Preprocess: EXIF transpose + downscale + grayscale
+    # Preprocess: EXIF transpose + downscale + contrast + grayscale
     pre_img, scale = preprocess_for_ocr(img)
-    # Fallback for images without usable EXIF: try 4 rotations and pick the
-    # one Tesseract reads as a real Indonesian receipt.
-    pre_img = auto_orient(pre_img)
     inv_scale = 1.0 / scale if scale > 0 else 1.0
 
     if kind == "tesseract":
