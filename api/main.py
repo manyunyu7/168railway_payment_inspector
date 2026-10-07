@@ -25,7 +25,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 from torchvision import transforms, models
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageFilter, ImageEnhance
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 
@@ -67,10 +67,15 @@ SUCCESS_WORDS = [
     r"pembayaran\s*(berhasil|diterima|sukses|selesai)",
     # Common reference IDs on completed transactions
     r"\b(rrn|no\.?\s*referensi|reference\s*no|nomor\s*transaksi)\b",
+    # Banking app confirmation cues
+    r"\b(bukti\s*transfer|detail\s*transaksi|riwayat|mutasi|kirim\s*uang)\b",
+    r"\b(transfer\s*ke|dikirim\s*ke|sent\s*to)\b",
+    r"\b(tgl\.?\s*transaksi|tanggal|waktu\s*transaksi)\b",
 ]
 AMOUNT_PATTERN = re.compile(r"(?:Rp\.?|IDR)\s*([\d.,]+)", re.IGNORECASE)
+BARE_AMOUNT_PATTERN = re.compile(r"\b(\d{1,3}(?:[.,]\d{3})+)\b")
 VALID_AMOUNTS = {5000, 8800, 9900, 10000, 12000, 15000, 20000, 25000, 35000, 50000}
-AMOUNT_TOLERANCE = 100  # allow Rp 15.100 to match 15000 (merchant fees)
+AMOUNT_TOLERANCE = 1500  # allow kode unik up to ~Rp 1.000 + rounding
 
 # ─── model loader ────────────────────────────────────────────────────
 _model = None
@@ -131,6 +136,7 @@ def preprocess_for_ocr(img: Image.Image) -> tuple[Image.Image, float]:
     Normalize image before OCR:
     - Honor EXIF orientation (phones often save landscape w/ rotation metadata)
     - Downscale if any side > OCR_MAX_SIDE (3-5× faster, no accuracy loss)
+    - Enhance contrast + sharpen (phone screenshots often low-contrast)
     - Convert to grayscale (Tesseract prefers it)
     Returns (processed_img, scale_factor_applied_to_coords).
     """
@@ -143,12 +149,18 @@ def preprocess_for_ocr(img: Image.Image) -> tuple[Image.Image, float]:
         new_size = (int(w * scale), int(h * scale))
         img = img.resize(new_size, Image.LANCZOS)
     img = img.convert("L")
+    img = ImageEnhance.Contrast(img).enhance(1.5)
+    img = img.filter(ImageFilter.SHARPEN)
     return img, scale
 
 
 def _ocr_tesseract_text(img: Image.Image) -> str:
     import pytesseract
-    return pytesseract.image_to_string(img) or ""
+    base = pytesseract.image_to_string(img, config="--psm 6") or ""
+    fallback = pytesseract.image_to_string(img, config="--psm 3") or ""
+    if len(fallback) > len(base):
+        return fallback
+    return base
 
 
 # Keywords we expect in a correctly-oriented Indonesian payment receipt.
@@ -205,22 +217,42 @@ def run_ocr(img: Image.Image) -> list[dict]:
 
     if kind == "tesseract":
         import pytesseract
-        data = pytesseract.image_to_data(pre_img, output_type=pytesseract.Output.DICT)
-        out = []
-        for i, t in enumerate(data["text"]):
-            t = t.strip()
-            if not t:
-                continue
-            # scale box coords back to original image resolution
-            x = int(data["left"][i] * inv_scale)
-            y = int(data["top"][i] * inv_scale)
-            w = int(data["width"][i] * inv_scale)
-            h = int(data["height"][i] * inv_scale)
-            out.append({
-                "text": t,
-                "box": [x, y, w, h],
-                "conf": float(data["conf"][i]) / 100.0 if data["conf"][i] != "-1" else 0.0,
-            })
+
+        def _tess_pass(im, config="--psm 6"):
+            data = pytesseract.image_to_data(im, output_type=pytesseract.Output.DICT, config=config)
+            results = []
+            for i, t in enumerate(data["text"]):
+                t = t.strip()
+                if not t:
+                    continue
+                x = int(data["left"][i] * inv_scale)
+                y = int(data["top"][i] * inv_scale)
+                w = int(data["width"][i] * inv_scale)
+                h = int(data["height"][i] * inv_scale)
+                results.append({
+                    "text": t,
+                    "box": [x, y, w, h],
+                    "conf": float(data["conf"][i]) / 100.0 if data["conf"][i] != "-1" else 0.0,
+                })
+            return results
+
+        # Try enhanced grayscale with PSM 6 (uniform text block)
+        out = _tess_pass(pre_img, "--psm 6")
+        # Also try PSM 3 (fully automatic) and merge if it finds more text
+        alt = _tess_pass(pre_img, "--psm 3")
+        if len(alt) > len(out):
+            out = alt
+        # Try binarized (Otsu threshold) — helps with colored backgrounds
+        try:
+            import numpy as np
+            arr = np.array(pre_img)
+            threshold = int(np.mean(arr))
+            binarized = Image.fromarray(((arr > threshold) * 255).astype(np.uint8))
+            bin_out = _tess_pass(binarized, "--psm 6")
+            if len(bin_out) > len(out):
+                out = bin_out
+        except Exception:
+            pass
         return out
     # paddle
     import numpy as np
@@ -303,6 +335,12 @@ def rule_check(ocr_results: list[dict], expected_amount: int | None = None) -> d
         a = parse_amount(m.group(1))
         if a is not None and 1000 <= a <= 10_000_000:
             amounts.append(a)
+    # Fallback: bare formatted numbers (e.g. "15.000" without "Rp" prefix)
+    if not amounts:
+        for m in BARE_AMOUNT_PATTERN.finditer(full_text):
+            a = parse_amount(m.group(1))
+            if a is not None and 5000 <= a <= 10_000_000:
+                amounts.append(a)
 
     if expected_amount is not None:
         amount_match = any(abs(a - expected_amount) <= AMOUNT_TOLERANCE for a in amounts)
@@ -441,11 +479,15 @@ async def validate(
     }
 
     # ─── Decide ─────────────────────────────────────────────────────
+    ocr_read_something = bool(rules["amounts_detected"]) or rules["recipient_hit"] or rules["success_hit"]
+
     if p_valid >= P_APPROVE_WITH_RULES and rules["rules_all_pass"]:
         verdict = "auto_approve"
         conf = p_valid
         reason = "Receipt valid dengan semua pengecekan lolos"
-    elif p_fake >= P_REJECT_WITH_RULES and len(rules["issues"]) >= 2:
+    elif p_fake >= P_REJECT_WITH_RULES and len(rules["issues"]) >= 2 and ocr_read_something:
+        # Only auto_reject when OCR actually read text and found mismatches.
+        # If OCR read nothing at all, that's OCR failure — not evidence of fraud.
         verdict = "auto_reject"
         conf = p_fake
         reason = "Multiple pengecekan gagal: " + "; ".join(i["msg"] for i in rules["issues"][:2])
