@@ -155,12 +155,9 @@ def preprocess_for_ocr(img: Image.Image) -> tuple[Image.Image, float]:
 
 
 def _ocr_tesseract_text(img: Image.Image) -> str:
+    """Single fast pass — used only for orientation scoring on tiny thumbnails."""
     import pytesseract
-    base = pytesseract.image_to_string(img, config="--psm 6") or ""
-    fallback = pytesseract.image_to_string(img, config="--psm 3") or ""
-    if len(fallback) > len(base):
-        return fallback
-    return base
+    return pytesseract.image_to_string(img, config="--psm 6") or ""
 
 
 # Keywords we expect in a correctly-oriented Indonesian payment receipt.
@@ -185,18 +182,19 @@ def auto_orient(img: Image.Image) -> Image.Image:
     Tesseract output contains the most expected receipt keywords.
     Cost: 4 OCR passes on a tiny thumbnail (~200px), so < 300ms total.
     """
-    # Thumbnail to make the probe cheap
     probe = img.copy()
     probe.thumbnail((400, 400), Image.LANCZOS)
 
     best_angle = 0
     best_score = _orient_score(_ocr_tesseract_text(probe))
-    for angle in (90, 180, 270):
-        rotated = probe.rotate(angle, expand=True)
-        s = _orient_score(_ocr_tesseract_text(rotated))
-        if s > best_score:
-            best_score = s
-            best_angle = angle
+    # If upright already reads well (>=3 keywords), skip rotation probes
+    if best_score < 3:
+        for angle in (90, 180, 270):
+            rotated = probe.rotate(angle, expand=True)
+            s = _orient_score(_ocr_tesseract_text(rotated))
+            if s > best_score:
+                best_score = s
+                best_angle = angle
 
     if best_angle == 0:
         return img
@@ -236,23 +234,24 @@ def run_ocr(img: Image.Image) -> list[dict]:
                 })
             return results
 
-        # Try enhanced grayscale with PSM 6 (uniform text block)
+        # Primary pass: PSM 6 (uniform text block)
         out = _tess_pass(pre_img, "--psm 6")
-        # Also try PSM 3 (fully automatic) and merge if it finds more text
-        alt = _tess_pass(pre_img, "--psm 3")
-        if len(alt) > len(out):
-            out = alt
-        # Try binarized (Otsu threshold) — helps with colored backgrounds
-        try:
-            import numpy as np
-            arr = np.array(pre_img)
-            threshold = int(np.mean(arr))
-            binarized = Image.fromarray(((arr > threshold) * 255).astype(np.uint8))
-            bin_out = _tess_pass(binarized, "--psm 6")
-            if len(bin_out) > len(out):
-                out = bin_out
-        except Exception:
-            pass
+        # Only try fallbacks if primary found very little (<10 words)
+        if len(out) < 10:
+            alt = _tess_pass(pre_img, "--psm 3")
+            if len(alt) > len(out):
+                out = alt
+        if len(out) < 10:
+            try:
+                import numpy as np
+                arr = np.array(pre_img)
+                threshold = int(np.mean(arr))
+                binarized = Image.fromarray(((arr > threshold) * 255).astype(np.uint8))
+                bin_out = _tess_pass(binarized, "--psm 6")
+                if len(bin_out) > len(out):
+                    out = bin_out
+            except Exception:
+                pass
         return out
     # paddle
     import numpy as np
