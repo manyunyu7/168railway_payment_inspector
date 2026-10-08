@@ -45,8 +45,10 @@ P_REJECT_WITH_RULES = 0.85
 
 # ─── Stage B whitelist patterns ──────────────────────────────────────
 RECIPIENT_PATTERNS = [
-    r"HENRY\s+AUGUSTA\s+HARSONO",
+    r"HENRY\s+AUGUSTA\s+HARS",
+    r"HENRY\s+AUGUSTA",
     r"168\s*RAILWAY",
+    r"168\s*railway",
 ]
 LOCATION_HINTS = [
     r"KOTA\s+BEKASI",
@@ -376,6 +378,7 @@ def rule_check(ocr_results: list[dict], expected_amount: int | None = None) -> d
             "msg": "Nominal pembayaran tidak terbaca di gambar",
         })
 
+    rules_passed = sum([recipient_hit, success_hit, amount_match])
     return {
         "recipient_hit": recipient_hit,
         "location_hits": location_hit,
@@ -386,6 +389,7 @@ def rule_check(ocr_results: list[dict], expected_amount: int | None = None) -> d
         "expected_amount": expected_amount,
         "issues": issues,
         "rules_all_pass": recipient_hit and success_hit and amount_match,
+        "rules_passed": rules_passed,
     }
 
 
@@ -481,6 +485,10 @@ async def validate(
         verdict = "auto_approve"
         conf = p_valid
         reason = "Receipt valid dengan semua pengecekan lolos"
+    elif p_valid >= 0.90 and rules["rules_passed"] >= 2:
+        verdict = "auto_approve"
+        conf = p_valid
+        reason = "Receipt valid (2/3 pengecekan lolos, model sangat yakin)"
     elif p_fake >= P_REJECT_WITH_RULES and len(rules["issues"]) >= 2 and ocr_read_something:
         # Only auto_reject when OCR actually read text and found mismatches.
         # If OCR read nothing at all, that's OCR failure — not evidence of fraud.
