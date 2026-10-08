@@ -490,11 +490,12 @@ async def validate(
         conf = p_valid
         reason = "Receipt valid (2/3 pengecekan lolos, model sangat yakin)"
     elif p_fake >= P_REJECT_WITH_RULES and len(rules["issues"]) >= 2 and ocr_read_something:
-        # Only auto_reject when OCR actually read text and found mismatches.
-        # If OCR read nothing at all, that's OCR failure — not evidence of fraud.
-        verdict = "auto_reject"
+        # OCR-based reject demoted to manual_review for safety while we
+        # accumulate more data. Fast-path reject (p_fake >= 0.98, above)
+        # still auto-rejects obvious non-receipts.
+        verdict = "manual_review"
         conf = p_fake
-        reason = "Multiple pengecekan gagal: " + "; ".join(i["msg"] for i in rules["issues"][:2])
+        reason = "Bukti mencurigakan, perlu verifikasi admin: " + "; ".join(i["msg"] for i in rules["issues"][:2])
     else:
         verdict = "manual_review"
         conf = max(p_valid, p_fake)
